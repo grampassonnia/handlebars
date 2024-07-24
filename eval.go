@@ -584,34 +584,38 @@ func (v *evalVisitor) findHelper(name string) reflect.Value {
 // callFunc calls function with given options
 func (v *evalVisitor) callFunc(name string, funcVal reflect.Value, options *Options) reflect.Value {
 	params := options.Params()
-
 	funcType := funcVal.Type()
-
 	// @todo Is there a better way to do that ?
 	strType := reflect.TypeOf("")
 	boolType := reflect.TypeOf(true)
-
 	// check parameters number
 	addOptions := false
 	numIn := funcType.NumIn()
-
+	variadic := funcType.IsVariadic()
 	if numIn == len(params)+1 {
 		lastArgType := funcType.In(numIn - 1)
 		if reflect.TypeOf(options).AssignableTo(lastArgType) {
 			addOptions = true
 		}
 	}
-
-	if !addOptions && (len(params) != numIn) {
+	if !addOptions && (len(params) != numIn && !variadic) {
 		v.errorf("Helper '%s' called with wrong number of arguments, needed %d but got %d", name, numIn, len(params))
+	}
+	vaCount := len(params) - numIn
+	if vaCount < 0 {
+		vaCount = 0
 	}
 
 	// check and collect arguments
-	args := make([]reflect.Value, numIn)
+	args := make([]reflect.Value, 0, numIn+vaCount)
 	for i, param := range params {
 		arg := reflect.ValueOf(param)
-		argType := funcType.In(i)
-
+		var argType reflect.Type
+		if vaCount > 0 && i >= numIn {
+			argType = funcType.In(numIn - 1)
+		} else {
+			argType = funcType.In(i)
+		}
 		if !arg.IsValid() {
 			if canBeNil(argType) {
 				arg = reflect.Zero(argType)
@@ -622,8 +626,7 @@ func (v *evalVisitor) callFunc(name string, funcVal reflect.Value, options *Opti
 				return reflect.Zero(strType)
 			}
 		}
-
-		if !arg.Type().AssignableTo(argType) {
+		if !arg.Type().AssignableTo(argType) && !variadic {
 			if strType.AssignableTo(argType) {
 				// convert parameter to string
 				arg = reflect.ValueOf(strValue(arg))
@@ -636,15 +639,14 @@ func (v *evalVisitor) callFunc(name string, funcVal reflect.Value, options *Opti
 			}
 		}
 
-		args[i] = arg
+		args = append(args, arg)
 	}
 
 	if addOptions {
-		args[numIn-1] = reflect.ValueOf(options)
+		args = append(args, reflect.ValueOf(options))
 	}
 
 	result := funcVal.Call(args)
-
 	return result[0]
 }
 
