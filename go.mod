@@ -1,4 +1,4 @@
-module github.com/flowchartsman/handlebars/v3
+module github.com/grampassonnia/handlebars
 
 go 1.16
 
